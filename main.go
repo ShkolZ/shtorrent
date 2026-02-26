@@ -29,6 +29,29 @@ type TrackerResponse struct {
 	Peers     string  `bencode:"peers"`
 }
 
+type Handshake struct {
+	info_hash []byte
+	peer_id   []byte
+}
+
+func NewHandshake(ih []byte, pi []byte) Handshake {
+	hs := Handshake{
+		info_hash: ih,
+		peer_id:   pi,
+	}
+	return hs
+}
+
+func (hs Handshake) GetHandshake() {
+	merged := make([]byte, 0)
+	merged = append(merged, byte(19))
+	merged = append(merged, []byte("BitTorrent protocol")...)
+	merged = append(merged, []byte{0, 0, 0, 0, 0, 0, 0, 0}...)
+	merged = append(merged, hs.info_hash...)
+	merged = append(merged, hs.peer_id...)
+
+}
+
 func main() {
 	data, _ := os.ReadFile("/home/ShkolZ/Downloads/debian-13.2.0-amd64-netinst.iso.torrent")
 	br := bytes.NewReader(data)
@@ -72,6 +95,34 @@ func main() {
 		log.Fatalln(err)
 	}
 	bytePeers := []byte(tr.Peers)
-	fmt.Printf("%v:%v\n", net.IP(bytePeers[:4]), binary.BigEndian.Uint16(bytePeers[4:6]))
+	address := fmt.Sprintf("%v:%v", net.IP(bytePeers[:4]), binary.BigEndian.Uint16(bytePeers[4:6]))
 
+	addr, err := net.ResolveTCPAddr("tcp", address)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	fmt.Println(addr)
+	connection, err := net.DialTCP("tcp", nil, addr)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer connection.Close()
+
+	fmt.Println(connection)
+	connection.Write([]byte("zalupa"))
+	buff := make([]byte, 4096)
+	var pointer int
+	for {
+		n, err := connection.Read(buff[pointer:])
+		if err != nil {
+			log.Fatalln(err)
+		}
+		if n == 0 {
+			break
+		}
+		pointer += n
+		fmt.Println(pointer, buff)
+
+	}
+	fmt.Println(string(buff))
 }
