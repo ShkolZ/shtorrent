@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/ShkolZ/shtorrent/torrentfile"
 	"github.com/jackpal/bencode-go"
@@ -42,14 +44,14 @@ func NewHandshake(ih []byte, pi []byte) Handshake {
 	return hs
 }
 
-func (hs Handshake) GetHandshake() {
+func (hs Handshake) GetHandshake() []byte {
 	merged := make([]byte, 0)
 	merged = append(merged, byte(19))
 	merged = append(merged, []byte("BitTorrent protocol")...)
 	merged = append(merged, []byte{0, 0, 0, 0, 0, 0, 0, 0}...)
 	merged = append(merged, hs.info_hash...)
 	merged = append(merged, hs.peer_id...)
-
+	return merged
 }
 
 func main() {
@@ -102,27 +104,32 @@ func main() {
 		log.Fatalln(err)
 	}
 	fmt.Println(addr)
-	connection, err := net.DialTCP("tcp", nil, addr)
+	connection, err := net.DialTimeout("tcp", address, 3*time.Second)
 	if err != nil {
 		log.Fatalln(err)
 	}
 	defer connection.Close()
 
 	fmt.Println(connection)
-	connection.Write([]byte("zalupa"))
+	hs := NewHandshake(torrent.InfoHash[:], []byte(peerId))
+	hsMsg := hs.GetHandshake()
+	fmt.Println(hsMsg, string(hsMsg))
+	connection.Write(hsMsg)
 	buff := make([]byte, 4096)
+	bfSize := math.Ceil(float64(len(torrent.PieceHashes)) / 8)
+	fmt.Println(bfSize, bfSize*8-float64(len(torrent.PieceHashes)))
 	var pointer int
 	for {
 		n, err := connection.Read(buff[pointer:])
-		if err != nil {
-			log.Fatalln(err)
-		}
 		if n == 0 {
 			break
 		}
+		if err == io.EOF {
+			break
+		}
 		pointer += n
-		fmt.Println(pointer, buff)
-
+		fmt.Println(string(buff[:68]), buff[:68])
+		fmt.Printf("Bitfield: %v; %v\n", buff[68:pointer], len(buff[68:pointer]))
 	}
-	fmt.Println(string(buff))
+	fmt.Println(string(buff[:]), buff)
 }

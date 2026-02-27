@@ -3,6 +3,7 @@ package torrentfile
 import (
 	"bytes"
 	"crypto/sha1"
+	"fmt"
 	"io"
 
 	"github.com/jackpal/bencode-go"
@@ -50,6 +51,7 @@ func (bto BencodeTorrent) BencodeToTorrent() (*TorrentFile, error) {
 
 	pieces := []byte(bto.Info.Pieces)
 	pieceAmount := len(pieces) / 20
+	fmt.Println(pieceAmount)
 	var piece [20]byte
 	pieceHashes := make([][20]byte, pieceAmount)
 	for i := 0; i < pieceAmount; i++ {
