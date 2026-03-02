@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,21 +18,25 @@ import (
 )
 
 type Peer struct {
-	ip   *string `bencode:"ip"`
-	port *string `bencode:"port"`
+	ip   net.IP
+	port uint16
 }
 
 type TrackerResponse struct {
-	Interval  int     `bencode:"interval"`
-	TrackerId *string `bencode:"tracker id"`
-	Seeders   *int    `bencode:"complete"`
-	Leechers  *int    `bencode:"incomplete"`
-	Peers     string  `bencode:"peers"`
+	Interval      int     `bencode:"interval"`
+	TrackerId     *string `bencode:"tracker id"`
+	Seeders       *int    `bencode:"complete"`
+	Leechers      *int    `bencode:"incomplete"`
+	ResponsePeers string  `bencode:"peers"`
 }
 
 type Handshake struct {
 	info_hash []byte
 	peer_id   []byte
+}
+
+type Config struct {
+	Id string
 }
 
 func NewHandshake(ih []byte, pi []byte) Handshake {
@@ -54,7 +57,76 @@ func (hs Handshake) GetHandshake() []byte {
 	return merged
 }
 
+func makeConnections(dialer net.Dialer, peers []Peer) chan net.Conn {
+	connCh := make(chan net.Conn)
+	loop := 0
+	go func() {
+		for i := 0; i < len(peers) && i < 25; i++ {
+			fmt.Println(loop)
+			loop++
+			address := fmt.Sprintf("%v:%v", peers[i].ip, peers[i].port)
+
+			conn, err := dialer.Dial("tcp", address)
+			if err == nil {
+				connCh <- conn
+			} else if err != nil {
+				fmt.Println("zalupa")
+			}
+		}
+	}()
+	return connCh
+}
+
+func MakePeers(rp string) []Peer {
+	bp := []byte(rp)
+	peerAmount := len(bp) / 6
+	peerSlc := make([]Peer, 0)
+
+	for i := 1; i <= peerAmount; i++ {
+		peer := bp[(i-1)*6 : i*6]
+		peerSlc = append(peerSlc, Peer{
+			ip:   net.IP(peer[:4]),
+			port: binary.BigEndian.Uint16(peer[4:6]),
+		})
+	}
+
+	return peerSlc
+}
+
+func Announce(tor *torrentfile.TorrentFile, cfg *Config) (*TrackerResponse, error) {
+	peerId := fmt.Sprintf("-ST0001-%v", rand.Text()[:12])
+	cfg.Id = peerId
+	params := url.Values{}
+	params.Set("info_hash", string(tor.InfoHash[:]))
+	params.Set("peer_id", peerId)
+
+	log.Println(peerId)
+	queries := fmt.Sprintf("?%v&port=5656&uploaded=0&downloaded=0&left=%v&event=started&compact=1", params.Encode(), tor.Length)
+	url := tor.Announce + queries
+	log.Println(url)
+	res, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	defer res.Body.Close()
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	tr := TrackerResponse{}
+	dataR := bytes.NewReader(data)
+	err = bencode.Unmarshal(dataR, &tr)
+	if err != nil {
+		return nil, err
+	}
+	return &tr, nil
+}
+
 func main() {
+	cfg := &Config{}
 	data, _ := os.ReadFile("/home/ShkolZ/Downloads/debian-13.2.0-amd64-netinst.iso.torrent")
 	br := bytes.NewReader(data)
 	bencodef, err := torrentfile.Open(br)
@@ -66,70 +138,41 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	log.Println(torrent.InfoHash)
-	log.Println(torrent.Announce)
-
-	peerId := fmt.Sprintf("-ST0001-%v", rand.Text()[:12])
-
-	params := url.Values{}
-	params.Set("info_hash", string(torrent.InfoHash[:]))
-	params.Set("peer_id", peerId)
-
-	log.Println(peerId)
-	queries := fmt.Sprintf("?%v&port=5656&uploaded=0&downloaded=0&left=%v&event=started&compact=1", params.Encode(), torrent.Length)
-	url := torrent.Announce + queries
-	log.Println(url)
-	res, err := http.Get(url)
+	tr, err := Announce(torrent, cfg)
 	if err != nil {
-		log.Fatalln(err)
-	}
-	defer res.Body.Close()
-
-	data, err = io.ReadAll(res.Body)
-	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 	}
 
-	tr := TrackerResponse{}
-	dataR := bytes.NewReader(data)
-	err = bencode.Unmarshal(dataR, &tr)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	bytePeers := []byte(tr.Peers)
-	address := fmt.Sprintf("%v:%v", net.IP(bytePeers[:4]), binary.BigEndian.Uint16(bytePeers[4:6]))
+	peerSlc := MakePeers(tr.ResponsePeers)
+	fmt.Println(peerSlc)
 
-	addr, err := net.ResolveTCPAddr("tcp", address)
-	if err != nil {
-		log.Fatalln(err)
+	dialer := net.Dialer{
+		Timeout: 5 * time.Second,
 	}
-	fmt.Println(addr)
-	connection, err := net.DialTimeout("tcp", address, 3*time.Second)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	defer connection.Close()
+	connCh := makeConnections(dialer, peerSlc)
 
-	fmt.Println(connection)
-	hs := NewHandshake(torrent.InfoHash[:], []byte(peerId))
+	conn := <-connCh
+	defer conn.Close()
+
+	fmt.Println(conn)
+
+	hs := NewHandshake(torrent.InfoHash[:], []byte(cfg.Id))
 	hsMsg := hs.GetHandshake()
 	fmt.Println(hsMsg, string(hsMsg))
-	connection.Write(hsMsg)
-	buff := make([]byte, 4096)
-	bfSize := math.Ceil(float64(len(torrent.PieceHashes)) / 8)
-	fmt.Println(bfSize, bfSize*8-float64(len(torrent.PieceHashes)))
-	var pointer int
-	for {
-		n, err := connection.Read(buff[pointer:])
-		if n == 0 {
-			break
-		}
-		if err == io.EOF {
-			break
-		}
-		pointer += n
-		fmt.Println(string(buff[:68]), buff[:68])
-		fmt.Printf("Bitfield: %v; %v\n", buff[68:pointer], len(buff[68:pointer]))
+	conn.Write(hsMsg)
+	handshakeBuff := make([]byte, 68)
+	_, err = io.ReadFull(conn, handshakeBuff)
+	if err != nil && err != io.EOF {
+		panic(err)
 	}
-	fmt.Println(string(buff[:]), buff)
+	buff := make([]byte, 4096)
+	n, err := conn.Read(buff)
+	if err != nil && err != io.EOF {
+		panic(err)
+	}
+	data = buff[:n]
+	message := data[:5]
+	payload := data[5:]
+
+	fmt.Printf("Message: %v, Payload: %v", message, payload)
 }
