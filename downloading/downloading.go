@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -42,7 +41,7 @@ func makeConnections(dialer net.Dialer, peers []Peer) chan net.Conn {
 			if err == nil {
 				connCh <- conn
 			} else if err != nil {
-				fmt.Printf("Unsuccessful Connection!(%v)", i+1)
+				fmt.Printf("Unsuccessful Connection!(%v)\n", i+1)
 			}
 		}
 	}()
@@ -123,45 +122,115 @@ func (msg Message) getLenInt() int {
 
 }
 
-func MakeMessage(data []byte) (int, Message) {
+func MakeMessage(data []byte) (int, Message, error) {
+	if len(data) < 4 {
+		return 0, Message{}, fmt.Errorf("Not enough bytes\n")
+	}
 	length := data[:4]
-	id := data[4]
-	payload := data[5 : 5+binary.BigEndian.Uint32(length)-1]
-	return int(5 + binary.BigEndian.Uint32(length) - 1), Message{
+	data = data[4:]
+
+	other := data[:binary.BigEndian.Uint32(length)]
+	id := other[0]
+	if len(other) <= 1 {
+		return 5, Message{
+			Length: length,
+			Id:     id,
+		}, nil
+	}
+
+	payload := other[1:binary.BigEndian.Uint32(length)]
+	return int(4 + binary.BigEndian.Uint32(length)), Message{
 		Length:  length,
 		Id:      id,
 		Payload: &payload,
+	}, nil
+}
+
+func sendInterested(peerCon net.Conn) error {
+	msg := []byte{0, 0, 0, 1, 2}
+	_, err := peerCon.Write(msg)
+	if err != nil {
+		return fmt.Errorf("Some problem sending interested msg(((")
 	}
+	return nil
+}
+
+type State struct {
+	Unchoke    bool
+	Interested bool
+	Bitfield   []byte
 }
 
 func downloadFromPeer(cfg *config.Config, peerCon net.Conn) {
 	fmt.Println("Downloading from Peer!...")
+	defer peerCon.Close()
 
 	hs := NewHandshake(cfg.Torrent.InfoHash[:], []byte(cfg.Id))
 	peerCon.Write(hs)
-
+	time.Sleep(2 * time.Second)
 	handshakeBuff := make([]byte, 68)
 	_, err := io.ReadFull(peerCon, handshakeBuff)
 	if err != nil && err != io.EOF {
-		panic(err)
+		fmt.Println("error getting hasdshake")
+		return
+	}
+
+	state := State{
+		Unchoke:    false,
+		Interested: false,
 	}
 
 	buff := make([]byte, 4096)
+	timeout := 0
+	for timeout < 5 {
+		fmt.Println("here")
+		peerCon.SetReadDeadline(time.Now().Add(1 * time.Second))
+		n, err := peerCon.Read(buff)
+		if err == nil && n > 4 {
+			for n != 0 {
+				fmt.Println("pidor")
+				data := buff[:n]
+				read, msg, err := MakeMessage(data)
+				if err != nil {
+					fmt.Println(err)
+					break
+				}
 
-	n, err := peerCon.Read(buff)
-	if err != nil && err != io.EOF {
-		panic(err)
+				switch msg.Id {
+				case 5:
+					state.Bitfield = *msg.Payload
+				case 1:
+					state.Unchoke = true
+				case 0:
+					state.Unchoke = false
+				case 4:
+					fmt.Println("I am not gonna bother with 'have'")
+					peerCon.Close()
+				}
+
+				buff = buff[read:]
+				n -= read
+
+				fmt.Printf("Length: %v  ID: %v  Payload: %v  Read: %v\n", msg.Length, msg.Id, msg.Payload, read)
+			}
+
+		} else {
+			timeout++
+		}
+
 	}
 
-	if n == 0 {
-		log.Fatalf("Nothing was written into buffer: %v\n", err)
+	err = sendInterested(peerCon)
+	if err != nil {
+		return
 	}
-	data := buff[:n]
-	n, msg := MakeMessage(data)
-	fmt.Printf("Length: %v  ID: %v  Payload: %v\n", msg.Length, msg.Id, msg.Payload)
-	data = data[n:]
-	n, msg = MakeMessage(data)
-	fmt.Printf("Length: %v  ID: %v  Payload: %v\n", msg.Length, msg.Id, msg.Payload)
+	state.Interested = true
+	fmt.Println("Interested was sent")
+	fmt.Println(state)
+
+	if state.Interested && state.Unchoke {
+		fmt.Println("Starting to Request Pieces!...")
+	}
 
 }
 
