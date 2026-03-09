@@ -48,6 +48,20 @@ func makeConnections(dialer net.Dialer, peers []Peer) chan net.Conn {
 	return connCh
 }
 
+func makePieceQueue(cfg *config.Config) chan int {
+	amount := len(cfg.Torrent.PieceHashes)
+	fmt.Println(amount)
+	pieceQueueChan := make(chan int)
+	go func() {
+		for i := range amount {
+			pieceQueueChan <- i
+		}
+	}()
+
+	return pieceQueueChan
+
+}
+
 func MakePeers(rp string) []Peer {
 	bp := []byte(rp)
 	peerAmount := len(bp) / 6
@@ -126,11 +140,16 @@ func MakeMessage(data []byte) (int, Message, error) {
 	if len(data) < 4 {
 		return 0, Message{}, fmt.Errorf("Not enough bytes\n")
 	}
+	fmt.Println(data)
 	length := data[:4]
 	data = data[4:]
 
 	other := data[:binary.BigEndian.Uint32(length)]
+	fmt.Printf("length: %v, length: %v\n", binary.BigEndian.Uint32(length), length)
+	fmt.Printf("dataLen: %v\n", len(data))
+	fmt.Printf("otherLen: %v\n", len(other))
 	id := other[0]
+	// if id == 7
 	if len(other) <= 1 {
 		return 5, Message{
 			Length: length,
@@ -161,7 +180,20 @@ type State struct {
 	Bitfield   []byte
 }
 
-func downloadFromPeer(cfg *config.Config, peerCon net.Conn) {
+func requestPiece(peerCon net.Conn, index int, offset int) {
+	buff := make([]byte, 17)
+
+	binary.BigEndian.PutUint32(buff[0:4], 13)
+	buff[4] = 6
+	binary.BigEndian.PutUint32(buff[5:9], uint32(index))
+	binary.BigEndian.PutUint32(buff[9:13], uint32(offset*16384))
+	binary.BigEndian.PutUint32(buff[13:17], uint32(16384))
+	fmt.Println(buff)
+
+	peerCon.Write(buff)
+}
+
+func downloadFromPeer(cfg *config.Config, peerCon net.Conn, pieceCh chan int) {
 	fmt.Println("Downloading from Peer!...")
 	defer peerCon.Close()
 
@@ -225,11 +257,48 @@ func downloadFromPeer(cfg *config.Config, peerCon net.Conn) {
 		return
 	}
 	state.Interested = true
-	fmt.Println("Interested was sent")
-	fmt.Println(state)
 
-	if state.Interested && state.Unchoke {
-		fmt.Println("Starting to Request Pieces!...")
+	fmt.Println("Interested was sent")
+	time.Sleep(3 * time.Second)
+	peerCon.SetReadDeadline(time.Now().Add(2 * time.Second))
+	n, _ := peerCon.Read(buff)
+	_, msg, err := MakeMessage(buff[:n])
+	if msg.Id == 1 {
+		state.Unchoke = true
+	} else {
+		fmt.Printf("syn shluhi %v\n", err)
+	}
+	fmt.Printf("Interested: %v Unchoked: %v\n", state.Interested, state.Unchoke)
+
+	buffer := make([]byte, 20048)
+	for state.Interested && state.Unchoke {
+		pieceIdx := 0
+		for offset := 0; offset < 256/16; offset++ {
+			requestPiece(peerCon, pieceIdx, offset)
+			peerCon.SetReadDeadline(time.Now().Add(10 * time.Second))
+
+			block := 16393
+			read := 0
+			for read <= block {
+				n, err := peerCon.Read(buffer[read:])
+				if err != nil {
+					fmt.Println("miron pidor")
+					return
+				}
+				read += n
+
+			}
+
+			fmt.Printf("bytes read: %v\n", read)
+			data := buffer[:block]
+			_, msg, err := MakeMessage(data)
+			if err != nil {
+				fmt.Println(err)
+			}
+			fmt.Println(msg)
+
+		}
+		state.Interested = false
 	}
 
 }
@@ -247,10 +316,10 @@ func DownloadTorrent(cfg *config.Config) {
 		Timeout: 5 * time.Second,
 	}
 	connCh := makeConnections(dialer, peerSlc)
-
+	pieceCh := makePieceQueue(cfg)
 	peerCon := <-connCh
 
-	downloadFromPeer(cfg, peerCon)
+	downloadFromPeer(cfg, peerCon, pieceCh)
 
 	// for i := 0; i < peerAmount; i++ {
 	// 	peerCon := <-connCh
