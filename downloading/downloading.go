@@ -51,11 +51,13 @@ func makeConnections(dialer net.Dialer, peers []Peer) chan net.Conn {
 func makePieceQueue(cfg *config.Config) chan int {
 	amount := len(cfg.Torrent.PieceHashes)
 	fmt.Println(amount)
+
 	pieceQueueChan := make(chan int)
 	go func() {
 		for i := range amount {
 			pieceQueueChan <- i
 		}
+		close(pieceQueueChan)
 	}()
 
 	return pieceQueueChan
@@ -128,6 +130,8 @@ func NewHandshake(infoHash []byte, peerId []byte) []byte {
 type Message struct {
 	Length  []byte
 	Id      byte
+	Index   *[]byte
+	Offset  *[]byte
 	Payload *[]byte
 }
 
@@ -140,16 +144,27 @@ func MakeMessage(data []byte) (int, Message, error) {
 	if len(data) < 4 {
 		return 0, Message{}, fmt.Errorf("Not enough bytes\n")
 	}
-	fmt.Println(data)
+
 	length := data[:4]
 	data = data[4:]
 
 	other := data[:binary.BigEndian.Uint32(length)]
-	fmt.Printf("length: %v, length: %v\n", binary.BigEndian.Uint32(length), length)
-	fmt.Printf("dataLen: %v\n", len(data))
-	fmt.Printf("otherLen: %v\n", len(other))
+
 	id := other[0]
-	// if id == 7
+
+	if id == 7 {
+		index := other[1:5]
+		offset := other[5:9]
+		payload := other[9:]
+		return int(4 + binary.BigEndian.Uint32(length)), Message{
+			Length:  length,
+			Id:      id,
+			Index:   &index,
+			Offset:  &offset,
+			Payload: &payload,
+		}, nil
+	}
+
 	if len(other) <= 1 {
 		return 5, Message{
 			Length: length,
@@ -188,7 +203,6 @@ func requestPiece(peerCon net.Conn, index int, offset int) {
 	binary.BigEndian.PutUint32(buff[5:9], uint32(index))
 	binary.BigEndian.PutUint32(buff[9:13], uint32(offset*16384))
 	binary.BigEndian.PutUint32(buff[13:17], uint32(16384))
-	fmt.Println(buff)
 
 	peerCon.Write(buff)
 }
@@ -215,12 +229,12 @@ func downloadFromPeer(cfg *config.Config, peerCon net.Conn, pieceCh chan int) {
 	buff := make([]byte, 4096)
 	timeout := 0
 	for timeout < 5 {
-		fmt.Println("here")
+
 		peerCon.SetReadDeadline(time.Now().Add(1 * time.Second))
 		n, err := peerCon.Read(buff)
 		if err == nil && n > 4 {
 			for n != 0 {
-				fmt.Println("pidor")
+
 				data := buff[:n]
 				read, msg, err := MakeMessage(data)
 				if err != nil {
@@ -231,6 +245,7 @@ func downloadFromPeer(cfg *config.Config, peerCon net.Conn, pieceCh chan int) {
 				switch msg.Id {
 				case 5:
 					state.Bitfield = *msg.Payload
+					fmt.Printf("Length: %v  ID: %v  Payload: %v  Read: %v\n", msg.Length, msg.Id, len(*msg.Payload), read)
 				case 1:
 					state.Unchoke = true
 				case 0:
@@ -243,7 +258,6 @@ func downloadFromPeer(cfg *config.Config, peerCon net.Conn, pieceCh chan int) {
 				buff = buff[read:]
 				n -= read
 
-				fmt.Printf("Length: %v  ID: %v  Payload: %v  Read: %v\n", msg.Length, msg.Id, msg.Payload, read)
 			}
 
 		} else {
@@ -268,37 +282,35 @@ func downloadFromPeer(cfg *config.Config, peerCon net.Conn, pieceCh chan int) {
 	} else {
 		fmt.Printf("syn shluhi %v\n", err)
 	}
-	fmt.Printf("Interested: %v Unchoked: %v\n", state.Interested, state.Unchoke)
 
 	buffer := make([]byte, 20048)
-	for state.Interested && state.Unchoke {
-		pieceIdx := 0
-		for offset := 0; offset < 256/16; offset++ {
-			requestPiece(peerCon, pieceIdx, offset)
-			peerCon.SetReadDeadline(time.Now().Add(10 * time.Second))
+	if state.Interested && state.Unchoke {
+		for pieceIdx := range pieceCh {
+			for offset := 0; offset < 256/16; offset++ {
+				requestPiece(peerCon, pieceIdx, offset)
+				peerCon.SetReadDeadline(time.Now().Add(10 * time.Second))
 
-			block := 16393
-			read := 0
-			for read <= block {
-				n, err := peerCon.Read(buffer[read:])
-				if err != nil {
-					fmt.Println("miron pidor")
-					return
+				block := 16393
+				read := 0
+				for read <= block {
+					n, err := peerCon.Read(buffer[read:])
+					if err != nil {
+						fmt.Println("miron pidor")
+						return
+					}
+					read += n
+
 				}
-				read += n
+
+				data := buffer[:read]
+				_, msg, err := MakeMessage(data)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fmt.Printf("Id: %v, Index: %v, Offset: %v, Payload: %v\n", msg.Id, *msg.Index, *msg.Offset, len(*msg.Payload))
 
 			}
-
-			fmt.Printf("bytes read: %v\n", read)
-			data := buffer[:block]
-			_, msg, err := MakeMessage(data)
-			if err != nil {
-				fmt.Println(err)
-			}
-			fmt.Println(msg)
-
 		}
-		state.Interested = false
 	}
 
 }
@@ -317,13 +329,12 @@ func DownloadTorrent(cfg *config.Config) {
 	}
 	connCh := makeConnections(dialer, peerSlc)
 	pieceCh := makePieceQueue(cfg)
-	peerCon := <-connCh
 
-	downloadFromPeer(cfg, peerCon, pieceCh)
+	maxPeerAmount := 25
 
-	// for i := 0; i < peerAmount; i++ {
-	// 	peerCon := <-connCh
-	// 	go downloadFromPeer(cfg, peerCon)
-	// }
+	for i := 0; i < maxPeerAmount; i++ {
+		peerCon := <-connCh
+		go downloadFromPeer(cfg, peerCon, pieceCh)
+	}
 
 }
