@@ -3,12 +3,15 @@ package downloading
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/ShkolZ/shtorrent/config"
@@ -18,6 +21,11 @@ import (
 type Peer struct {
 	ip   net.IP
 	port uint16
+}
+
+type Piece struct {
+	Index int
+	Data  []byte
 }
 
 type TrackerResponse struct {
@@ -285,33 +293,68 @@ func downloadFromPeer(cfg *config.Config, peerCon net.Conn, pieceCh chan int) {
 
 	buffer := make([]byte, 20048)
 	if state.Interested && state.Unchoke {
-		for pieceIdx := range pieceCh {
-			for offset := 0; offset < 256/16; offset++ {
-				requestPiece(peerCon, pieceIdx, offset)
-				peerCon.SetReadDeadline(time.Now().Add(10 * time.Second))
+		pieceDataCh := make(chan Piece)
+		go func() {
 
-				block := 16393
-				read := 0
-				for read <= block {
-					n, err := peerCon.Read(buffer[read:])
-					if err != nil {
-						fmt.Println("miron pidor")
-						return
+			for pieceIdx := range pieceCh {
+				currentPiece := make([]byte, 0)
+				for offset := 0; offset < 256/16; offset++ {
+					requestPiece(peerCon, pieceIdx, offset)
+					peerCon.SetReadDeadline(time.Now().Add(10 * time.Second))
+
+					block := 16393
+					read := 0
+					for read <= block {
+						n, err := peerCon.Read(buffer[read:])
+						if err != nil {
+							fmt.Println("miron pidor")
+							return
+						}
+						read += n
+
 					}
-					read += n
 
+					data := buffer[:read]
+					_, msg, err := MakeMessage(data)
+					if err != nil {
+						fmt.Println(err)
+					}
+					currentPiece = append(currentPiece, *msg.Payload...)
 				}
-
-				data := buffer[:read]
-				_, msg, err := MakeMessage(data)
-				if err != nil {
-					fmt.Println(err)
+				pieceHash := sha1.Sum(currentPiece)
+				if pieceHash == cfg.Torrent.PieceHashes[pieceIdx] {
+					pieceDataCh <- Piece{
+						Index: pieceIdx,
+						Data:  currentPiece,
+					}
 				}
-				fmt.Printf("Id: %v, Index: %v, Offset: %v, Payload: %v\n", msg.Id, *msg.Index, *msg.Offset, len(*msg.Payload))
 
 			}
+		}()
+		file, err := os.Create(cfg.Torrent.Name)
+		if err != nil {
+			log.Fatalln("Couldnt create file")
 		}
+		for piece := range pieceDataCh {
+			go writeToFile(file, piece)
+		}
+
 	}
+
+}
+
+func writeToFile(file *os.File, piece Piece) {
+	length := len(piece.Data)
+	offset := int64(piece.Index) * int64(length)
+	written := 0
+	for written < length {
+		n, err := file.WriteAt(piece.Data, offset)
+		if err != nil && err != io.EOF {
+			log.Fatalln("Some problem with writing file")
+		}
+		written += n
+	}
+	fmt.Printf("Wrote Piece %d into %s\n", piece.Index, file.Name)
 
 }
 
