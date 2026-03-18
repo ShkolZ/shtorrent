@@ -12,7 +12,7 @@ import (
 
 func main() {
 	cfg := &config.Config{}
-	data, _ := os.ReadFile("/home/ShkolZ/Downloads/debian-13.2.0-amd64-netinst.iso.torrent")
+	data, _ := os.ReadFile("/home/ShkolZ/Downloads/S2E10CS.torrent")
 	br := bytes.NewReader(data)
 	bencodef, err := metadata.Open(br)
 	if err != nil {

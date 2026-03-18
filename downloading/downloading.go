@@ -29,11 +29,12 @@ type Piece struct {
 }
 
 type TrackerResponse struct {
-	Interval      int     `bencode:"interval"`
-	TrackerId     *string `bencode:"tracker id"`
-	Seeders       *int    `bencode:"complete"`
-	Leechers      *int    `bencode:"incomplete"`
-	ResponsePeers string  `bencode:"peers"`
+	Interval      int    `bencode:"interval"`
+	TrackerId     string `bencode:"tracker id"`
+	Seeders       int    `bencode:"complete"`
+	Leechers      int    `bencode:"incomplete"`
+	ResponsePeers string `bencode:"peers"`
+	MinInterval   int    `bencode:"min interval"`
 }
 
 func makeConnections(dialer net.Dialer, peers []Peer) chan net.Conn {
@@ -109,7 +110,7 @@ func Announce(cfg *config.Config) (*TrackerResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	fmt.Println(string(data))
 	tr := TrackerResponse{}
 	dataR := bytes.NewReader(data)
 	err = bencode.Unmarshal(dataR, &tr)
@@ -290,15 +291,16 @@ func downloadFromPeer(cfg *config.Config, peerCon net.Conn, pieceCh chan int) {
 	} else {
 		fmt.Printf("syn shluhi %v\n", err)
 	}
-
+	fmt.Println(cfg.Torrent.PieceLength)
 	buffer := make([]byte, 20048)
+
 	if state.Interested && state.Unchoke {
 		pieceDataCh := make(chan Piece)
 		go func() {
 
 			for pieceIdx := range pieceCh {
 				currentPiece := make([]byte, 0)
-				for offset := 0; offset < 256/16; offset++ {
+				for offset := 0; offset < (cfg.Torrent.PieceLength/1024)/16; offset++ {
 					requestPiece(peerCon, pieceIdx, offset)
 					peerCon.SetReadDeadline(time.Now().Add(10 * time.Second))
 
@@ -331,6 +333,7 @@ func downloadFromPeer(cfg *config.Config, peerCon net.Conn, pieceCh chan int) {
 
 			}
 		}()
+
 		file, err := os.Create(cfg.Torrent.Name)
 		if err != nil {
 			log.Fatalln("Couldnt create file")
@@ -354,7 +357,8 @@ func writeToFile(file *os.File, piece Piece) {
 		}
 		written += n
 	}
-	fmt.Printf("Wrote Piece %d into %s\n", piece.Index, file.Name)
+
+	fmt.Printf("Wrote Piece %d into %v\n", piece.Index, file.Name())
 
 }
 
