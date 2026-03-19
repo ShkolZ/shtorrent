@@ -1,8 +1,8 @@
 package config
 
-import "github.com/ShkolZ/shtorrent/metadata"
+import "github.com/ShkolZ/shtorrent/torrent"
 
 type Config struct {
 	Id      string
-	Torrent *metadata.TorrentFile
+	Torrent *torrent.TorrentFile
 }

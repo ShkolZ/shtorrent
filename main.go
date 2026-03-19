@@ -7,14 +7,14 @@ import (
 
 	"github.com/ShkolZ/shtorrent/config"
 	"github.com/ShkolZ/shtorrent/downloading"
-	"github.com/ShkolZ/shtorrent/metadata"
+	"github.com/ShkolZ/shtorrent/torrent"
 )
 
 func main() {
 	cfg := &config.Config{}
-	data, _ := os.ReadFile("/home/ShkolZ/Downloads/S2E10CS.torrent")
+	data, _ := os.ReadFile("/home/ShkolZ/Downloads/debian-13.2.0-arm64-netinst.iso.torrent")
 	br := bytes.NewReader(data)
-	bencodef, err := metadata.Open(br)
+	bencodef, err := torrent.Open(br)
 	if err != nil {
 		log.Fatalln(err)
 	}
