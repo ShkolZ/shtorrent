@@ -122,9 +122,8 @@ func downloadFromPeer(cfg *config.Config, peerCon *peers.PeerConn, pieceCh chan 
 						n, err := peerCon.Conn.Read(buffer[read:])
 						if err != nil && err != io.EOF {
 							fmt.Println(err)
+							pieceCh <- pieceIdx
 							return
-						} else if err == io.EOF {
-							break
 						}
 						read += n
 
@@ -135,7 +134,7 @@ func downloadFromPeer(cfg *config.Config, peerCon *peers.PeerConn, pieceCh chan 
 					if err != nil {
 						fmt.Println(err)
 					}
-					if msg.Payload != nil {
+					if msg.Payload != nil && msg.Id == 7 {
 						currentPiece = append(currentPiece, *msg.Payload...)
 					}
 				}
@@ -143,35 +142,39 @@ func downloadFromPeer(cfg *config.Config, peerCon *peers.PeerConn, pieceCh chan 
 				if pieceHash != cfg.Torrent.PieceHashes[pieceIdx] {
 					fmt.Printf("Returned Piece %d into queue\n", pieceIdx)
 					pieceCh <- pieceIdx
-				}
-				pieceDataCh <- pieces.Piece{
-					Index: pieceIdx,
-					Data:  currentPiece,
+				} else {
+					pieceDataCh <- pieces.Piece{
+						Index: pieceIdx,
+						Data:  currentPiece,
+					}
 				}
 			}
 		}()
 
 		file, err := os.Create(cfg.Torrent.Name)
+		file.Truncate(int64(cfg.Torrent.Length))
 		if err != nil {
 			log.Fatalln("Couldnt create file")
 		}
 		for piece := range pieceDataCh {
-			go writeToFile(file, piece)
+			writeToFile(file, piece, cfg)
 		}
 
 	}
 
 }
 
-func writeToFile(file *os.File, piece pieces.Piece) {
-	length := len(piece.Data)
+func writeToFile(file *os.File, piece pieces.Piece, cfg *config.Config) {
+	length := cfg.Torrent.PieceLength
+	fmt.Println(string(piece.Data[:128]))
 	offset := int64(piece.Index) * int64(length)
 	written := 0
 	for written < length {
-		n, err := file.WriteAt(piece.Data, offset)
+		n, err := file.WriteAt(piece.Data[written:], offset+int64(written))
 		if err != nil && err != io.EOF {
-			log.Fatalln("Some problem with writing file")
+			fmt.Println("Some problem with writing file")
 		}
+		fmt.Println(written)
 		written += n
 	}
 

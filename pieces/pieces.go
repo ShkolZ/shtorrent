@@ -15,12 +15,11 @@ func MakePieceQueue(cfg *config.Config) chan int {
 	amount := len(cfg.Torrent.PieceHashes)
 	fmt.Println(amount)
 
-	pieceQueueChan := make(chan int)
+	pieceQueueChan := make(chan int, 100)
 	go func() {
 		for i := range amount {
 			pieceQueueChan <- i
 		}
-		close(pieceQueueChan)
 	}()
 
 	return pieceQueueChan
