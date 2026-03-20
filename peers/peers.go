@@ -3,9 +3,12 @@ package peers
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/ShkolZ/shtorrent/config"
 )
 
 const target int = 25
@@ -18,6 +21,44 @@ type Peer struct {
 type PeerConn struct {
 	Address string
 	Conn    net.Conn
+}
+
+func (pc *PeerConn) Handshake(cfg *config.Config) (bool, error) {
+	hsMsg := newHandshake(cfg)
+	if _, err := pc.Conn.Write(hsMsg); err != nil {
+		return false, fmt.Errorf("Error with sending handshake: %v\n", err)
+	}
+
+	timeout := 3
+	read := 0
+	buffer := make([]byte, 68)
+	for read < len(hsMsg) {
+		pc.Conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+		n, err := pc.Conn.Read(buffer[read:])
+		if err != nil && err != io.EOF {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				timeout++
+			}
+		} else {
+			return false, fmt.Errorf("Problem reading handshake: %v\n", err)
+		}
+		read += n
+	}
+
+	return true, nil
+
+}
+
+func newHandshake(cfg *config.Config) []byte {
+
+	merged := make([]byte, 0)
+	merged = append(merged, byte(19))
+	merged = append(merged, []byte("BitTorrent protocol")...)
+	merged = append(merged, []byte{0, 0, 0, 0, 0, 0, 0, 0}...)
+	merged = append(merged, cfg.Torrent.InfoHash[:]...)
+	merged = append(merged, cfg.Id...)
+	return merged
+
 }
 
 type PeerManager struct {
@@ -71,7 +112,6 @@ func (pm *PeerManager) fillConnections(peers []Peer) {
 		pm.mutex.Lock()
 		pieceAmount := len(pm.peerMap)
 		pm.mutex.Unlock()
-		fmt.Println(pieceAmount)
 		if pieceAmount < target && i < len(peers) {
 			conn, err := makeConnection(peers[i])
 			if err == nil {

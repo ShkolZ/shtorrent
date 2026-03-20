@@ -1,8 +1,6 @@
 package pieces
 
 import (
-	"fmt"
-
 	"github.com/ShkolZ/shtorrent/config"
 )
 
@@ -13,7 +11,6 @@ type Piece struct {
 
 func MakePieceQueue(cfg *config.Config) chan int {
 	amount := len(cfg.Torrent.PieceHashes)
-	fmt.Println(amount)
 
 	pieceQueueChan := make(chan int, 100)
 	go func() {

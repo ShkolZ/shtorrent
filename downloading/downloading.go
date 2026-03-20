@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"time"
 
@@ -20,6 +21,18 @@ import (
 // 	peer_id   []byte
 // }
 
+const (
+	Choke         = 0
+	Unchoke       = 1
+	Interested    = 2
+	NotInterested = 3
+	Have          = 4
+	Bitfield      = 5
+	Request       = 6
+	Piece         = 7
+	Cancel        = 8
+)
+
 type State struct {
 	Unchoke    bool
 	Interested bool
@@ -28,19 +41,9 @@ type State struct {
 
 func downloadFromPeer(cfg *config.Config, peerCon *peers.PeerConn, pieceCh chan int, removeCh chan string) {
 	defer func() {
-		fmt.Println("Ya tyt duzhe casto")
 		removeCh <- peerCon.Address
 	}()
-	fmt.Println(cfg.Torrent.Length, len(cfg.Torrent.PieceHashes)*cfg.Torrent.PieceLength)
-	hs := messages.NewHandshake(cfg.Torrent.InfoHash[:], []byte(cfg.Id))
-	peerCon.Conn.Write(hs)
-	time.Sleep(2 * time.Second)
-	handshakeBuff := make([]byte, 68)
-	_, err := io.ReadFull(peerCon.Conn, handshakeBuff)
-	if err != nil && err != io.EOF {
-		fmt.Println("error getting hasdshake")
-		return
-	}
+	peerCon.Handshake(cfg)
 
 	state := State{
 		Unchoke:    false,
@@ -48,52 +51,83 @@ func downloadFromPeer(cfg *config.Config, peerCon *peers.PeerConn, pieceCh chan 
 	}
 
 	buff := make([]byte, 4096)
+	read := 0
+	used := 0
 	timeout := 0
-	for timeout < 5 {
-
+	for timeout < 3 {
 		peerCon.Conn.SetReadDeadline(time.Now().Add(1 * time.Second))
-		n, err := peerCon.Conn.Read(buff)
-		if err == nil && n > 4 {
-			for n != 0 {
-
-				data := buff[:n]
-				read, msg, err := messages.MakeMessage(data)
-				if err != nil {
-					fmt.Println(err)
-					break
+		n, err := peerCon.Conn.Read(buff[read:])
+		if err != nil && err != io.EOF {
+			if ne, ok := err.(net.Error); ok {
+				if ne.Timeout() {
+					timeout++
+				} else {
+					return
 				}
-
-				switch msg.Id {
-				case 5:
-					state.Bitfield = *msg.Payload
-					fmt.Printf("Length: %v  ID: %v  Payload: %v  Read: %v\n", msg.Length, msg.Id, len(*msg.Payload), read)
-				case 1:
-					state.Unchoke = true
-				case 0:
-					state.Unchoke = false
-				case 4:
-					fmt.Println("I am not gonna bother with 'have'")
-					peerCon.Conn.Close()
-				}
-
-				buff = buff[read:]
-				n -= read
-
+			} else {
+				return
 			}
-
-		} else {
-			timeout++
+		}
+		read += n
+		used, msg, _ := messages.MakeMessage(buff[used:read])
+		used += used
+		if msg != nil {
+			switch msg.Id {
+			case Unchoke:
+				state.Unchoke = true
+			case Bitfield:
+				state.Bitfield = *msg.Payload
+			case Have:
+				fmt.Println("Not implemented")
+				return
+			}
 		}
 
 	}
 
-	err = messages.SendInterested(peerCon.Conn)
+	// timeout := 0
+	// for timeout < 5 {
+
+	// 	peerCon.Conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+	// 	n, err := peerCon.Conn.Read(buff)
+	// 	if err == nil && n > 4 {
+	// 		for n != 0 {
+
+	// 			data := buff[:n]
+	// 			read, msg, err := messages.MakeMessage(data)
+	// 			if err != nil {
+	// 				fmt.Println(err)
+	// 				break
+	// 			}
+
+	// 			switch msg.Id {
+	// 			case 5:
+	// 				state.Bitfield = *msg.Payload
+	// 			case 1:
+	// 				state.Unchoke = true
+	// 			case 0:
+	// 				state.Unchoke = false
+	// 			case 4:
+	// 				return
+	// 			}
+
+	// 			buff = buff[read:]
+	// 			n -= read
+
+	// 		}
+
+	// 	} else {
+	// 		timeout++
+	// 	}
+
+	// }
+
+	err := messages.SendInterested(peerCon.Conn)
 	if err != nil {
 		return
 	}
 	state.Interested = true
 
-	fmt.Println("Interested was sent")
 	time.Sleep(3 * time.Second)
 	peerCon.Conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	n, _ := peerCon.Conn.Read(buff)
@@ -111,7 +145,7 @@ func downloadFromPeer(cfg *config.Config, peerCon *peers.PeerConn, pieceCh chan 
 		go func() {
 
 			for pieceIdx := range pieceCh {
-				currentPiece := make([]byte, 0)
+				currentPiece := make([]byte, cfg.Torrent.PieceLength)
 				for offset := 0; offset < (cfg.Torrent.PieceLength/1024)/16; offset++ {
 					messages.RequestPiece(peerCon.Conn, pieceIdx, offset)
 					peerCon.Conn.SetReadDeadline(time.Now().Add(10 * time.Second))
@@ -135,11 +169,12 @@ func downloadFromPeer(cfg *config.Config, peerCon *peers.PeerConn, pieceCh chan 
 						fmt.Println(err)
 					}
 					if msg.Payload != nil && msg.Id == 7 {
-						currentPiece = append(currentPiece, *msg.Payload...)
+						copy(currentPiece, *msg.Payload)
 					}
 				}
 				pieceHash := sha1.Sum(currentPiece)
 				if pieceHash != cfg.Torrent.PieceHashes[pieceIdx] {
+					fmt.Println(pieceHash, cfg.Torrent.PieceHashes[pieceIdx])
 					fmt.Printf("Returned Piece %d into queue\n", pieceIdx)
 					pieceCh <- pieceIdx
 				} else {
@@ -166,7 +201,6 @@ func downloadFromPeer(cfg *config.Config, peerCon *peers.PeerConn, pieceCh chan 
 
 func writeToFile(file *os.File, piece pieces.Piece, cfg *config.Config) {
 	length := cfg.Torrent.PieceLength
-	fmt.Println(string(piece.Data[:128]))
 	offset := int64(piece.Index) * int64(length)
 	written := 0
 	for written < length {
@@ -174,8 +208,8 @@ func writeToFile(file *os.File, piece pieces.Piece, cfg *config.Config) {
 		if err != nil && err != io.EOF {
 			fmt.Println("Some problem with writing file")
 		}
-		fmt.Println(written)
 		written += n
+
 	}
 
 	fmt.Printf("Wrote Piece %d at offset: %v with length: %v\n", piece.Index, offset/1024, length/1024)

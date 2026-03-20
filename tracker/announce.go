@@ -42,7 +42,6 @@ func Announce(cfg *config.Config) (*TrackerResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(string(data))
 	tr := TrackerResponse{}
 	dataR := bytes.NewReader(data)
 	err = bencode.Unmarshal(dataR, &tr)

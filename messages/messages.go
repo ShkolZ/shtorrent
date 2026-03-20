@@ -26,34 +26,26 @@ func RequestPiece(peerCon net.Conn, index int, offset int) {
 	peerCon.Write(buff)
 }
 
-func NewHandshake(infoHash []byte, peerId []byte) []byte {
-
-	merged := make([]byte, 0)
-	merged = append(merged, byte(19))
-	merged = append(merged, []byte("BitTorrent protocol")...)
-	merged = append(merged, []byte{0, 0, 0, 0, 0, 0, 0, 0}...)
-	merged = append(merged, infoHash...)
-	merged = append(merged, peerId...)
-	return merged
-
-}
-
 func (msg Message) getLenInt() int {
 	return int(binary.BigEndian.Uint16(msg.Length))
 
 }
 
-func MakeMessage(data []byte) (int, Message, error) {
+func MakeMessage(data []byte) (int, *Message, error) {
 	if len(data) < 5 {
-		return 0, Message{}, fmt.Errorf("Not enough bytes\n")
+		return 0, &Message{}, fmt.Errorf("Not enough bytes\n")
 	}
 
 	length := data[:4]
+	lengthInt := binary.BigEndian.Uint32(length)
 	data = data[4:]
+	if uint32(len(data)) < lengthInt {
+		return 0, &Message{}, fmt.Errorf("Not enought bytes\n")
+	}
 
 	other := data[:binary.BigEndian.Uint32(length)]
 	if len(other) < 1 {
-		return 0, Message{}, fmt.Errorf("Not Enough bytes\n")
+		return 0, &Message{}, fmt.Errorf("Not Enough bytes\n")
 	}
 	id := other[0]
 
@@ -61,7 +53,7 @@ func MakeMessage(data []byte) (int, Message, error) {
 		index := other[1:5]
 		offset := other[5:9]
 		payload := other[9:]
-		return int(4 + binary.BigEndian.Uint32(length)), Message{
+		return int(4 + binary.BigEndian.Uint32(length)), &Message{
 			Length:  length,
 			Id:      id,
 			Index:   &index,
@@ -71,14 +63,14 @@ func MakeMessage(data []byte) (int, Message, error) {
 	}
 
 	if len(other) <= 1 {
-		return 5, Message{
+		return 5, &Message{
 			Length: length,
 			Id:     id,
 		}, nil
 	}
 
 	payload := other[1:binary.BigEndian.Uint32(length)]
-	return int(4 + binary.BigEndian.Uint32(length)), Message{
+	return int(4 + binary.BigEndian.Uint32(length)), &Message{
 		Length:  length,
 		Id:      id,
 		Payload: &payload,
