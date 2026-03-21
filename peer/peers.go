@@ -1,4 +1,4 @@
-package peers
+package peer
 
 import (
 	"encoding/binary"
@@ -88,6 +88,7 @@ func (pm *PeerManager) Run(rp string) {
 		case addr := <-pm.RemoveCh:
 			pm.mutex.Lock()
 			peerCon, ok := pm.peerMap[addr]
+
 			if ok {
 				peerCon.Conn.Close()
 				delete(pm.peerMap, addr)
@@ -111,6 +112,7 @@ func (pm *PeerManager) fillConnections(peers []Peer) {
 
 		pm.mutex.Lock()
 		pieceAmount := len(pm.peerMap)
+		fmt.Println(pieceAmount)
 		pm.mutex.Unlock()
 		if pieceAmount < target && i < len(peers) {
 			conn, err := makeConnection(peers[i])

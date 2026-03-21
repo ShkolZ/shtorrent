@@ -14,18 +14,6 @@ type Message struct {
 	Payload *[]byte
 }
 
-func RequestPiece(peerCon net.Conn, index int, offset int) {
-	buff := make([]byte, 17)
-
-	binary.BigEndian.PutUint32(buff[0:4], 13)
-	buff[4] = 6
-	binary.BigEndian.PutUint32(buff[5:9], uint32(index))
-	binary.BigEndian.PutUint32(buff[9:13], uint32(offset*16384))
-	binary.BigEndian.PutUint32(buff[13:17], uint32(16384))
-
-	peerCon.Write(buff)
-}
-
 func (msg Message) getLenInt() int {
 	return int(binary.BigEndian.Uint16(msg.Length))
 

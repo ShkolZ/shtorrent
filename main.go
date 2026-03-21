@@ -6,23 +6,28 @@ import (
 	"os"
 
 	"github.com/ShkolZ/shtorrent/config"
-	"github.com/ShkolZ/shtorrent/downloading"
+	"github.com/ShkolZ/shtorrent/downloader"
 	"github.com/ShkolZ/shtorrent/torrent"
 )
 
 func main() {
 	cfg := &config.Config{}
-	data, _ := os.ReadFile("/home/ShkolZ/Downloads/debian-13.2.0-amd64-netinst.iso.torrent")
+	data, _ := os.ReadFile("/home/ShkolZ/Downloads/S2E10CS.torrent")
 	br := bytes.NewReader(data)
 	bencodef, err := torrent.Open(br)
 	if err != nil {
 		log.Fatalln(err)
 	}
 	cfg.Torrent, err = bencodef.BencodeToTorrent()
+
+	file, err := os.Create(cfg.Torrent.Name)
+	file.Truncate(int64(cfg.Torrent.Length))
+	cfg.File = file
+
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	downloading.DownloadTorrent(cfg)
+	downloader.DownloadTorrent(cfg)
 
 }
