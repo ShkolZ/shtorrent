@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"os"
 
@@ -12,7 +13,9 @@ import (
 
 func main() {
 	cfg := &config.Config{}
-	data, _ := os.ReadFile("/home/ShkolZ/Downloads/S2E10CS.torrent")
+	torrentPath := os.Args[1]
+	fmt.Println(torrentPath)
+	data, _ := os.ReadFile(torrentPath)
 	br := bytes.NewReader(data)
 	bencodef, err := torrent.Open(br)
 	if err != nil {
@@ -23,6 +26,7 @@ func main() {
 	file, err := os.Create(cfg.Torrent.Name)
 	file.Truncate(int64(cfg.Torrent.Length))
 	cfg.File = file
+	log.Fatalln()
 
 	if err != nil {
 		log.Fatalln(err)

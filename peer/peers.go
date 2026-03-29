@@ -159,23 +159,3 @@ func makeConnection(peer Peer) (*PeerConn, error) {
 		Conn:    conn,
 	}, nil
 }
-
-func MakeConnections(dialer net.Dialer, peers []Peer) chan net.Conn {
-	fmt.Println("Connecting to Peers!...")
-
-	connCh := make(chan net.Conn)
-
-	go func() {
-		for i := 0; i < len(peers) && i < 25; i++ {
-
-			address := fmt.Sprintf("%v:%v", peers[i].ip, peers[i].port)
-			conn, err := dialer.Dial("tcp", address)
-			if err == nil {
-				connCh <- conn
-			} else if err != nil {
-				fmt.Printf("Unsuccessful Connection!(%v)\n", i+1)
-			}
-		}
-	}()
-	return connCh
-}
