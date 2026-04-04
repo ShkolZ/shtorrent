@@ -21,16 +21,17 @@ func main() {
 	data, _ := os.ReadFile(torrentPath)
 	br := bytes.NewReader(data)
 	bencodef, err := torrent.Open(br)
+
 	if err != nil {
 		log.Fatalln(err)
 	}
+
 	cfg.Torrent, err = bencodef.BencodeToTorrent()
 
 	// file, err := os.Create(cfg.Torrent.Name)
 	// file.Truncate(int64(cfg.Torrent.Length))
 	// cfg.File = file
 	// log.Fatalln()
-
 	if err != nil {
 		log.Fatalln(err)
 	}

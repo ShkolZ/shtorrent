@@ -47,6 +47,7 @@ func InitializeFiles(cfg *config.Config) (chan *piece.Piece, error) {
 	pieceDataCh := make(chan *piece.Piece, 10)
 
 	if isSingleMode(cfg) {
+		fmt.Println(cfg.Torrent.Name)
 		file, err := os.Create(cfg.Torrent.Name)
 		if err != nil {
 			return nil, fmt.Errorf("Some problem with creating file(SingleMode): %v\n", err)

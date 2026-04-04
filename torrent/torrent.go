@@ -1,19 +1,18 @@
 package torrent
 
 import (
-	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 
-	"github.com/jackpal/bencode-go"
+	"github.com/zeebo/bencode"
 )
 
 type FileMetadata struct {
 	Length int      `bencode:"length"`
 	Path   []string `bencode:"path"`
-	MdSum  string   `bencode:"md5sum"`
 }
 type BencodeInfo struct {
 	Length      int            `bencode:"length"`
@@ -23,16 +22,32 @@ type BencodeInfo struct {
 	Pieces      string         `bencode:"pieces"`
 }
 type BencodeTorrent struct {
-	Announce string      `bencode:"announce"`
+	Announce string
 	Info     BencodeInfo `bencode:"info"`
+	RawInfo  bencode.RawMessage
+}
+
+type RawTorrentInfo struct {
+	Announce string             `bencode:"announce"`
+	RawInfo  bencode.RawMessage `bencode:"info"`
 }
 
 func Open(r io.Reader) (*BencodeTorrent, error) {
+	rt := RawTorrentInfo{}
 	bt := BencodeTorrent{}
-	err := bencode.Unmarshal(r, &bt)
+
+	decoder := bencode.NewDecoder(r)
+
+	err := decoder.Decode(&rt)
 	if err != nil {
-		return &BencodeTorrent{}, err
+		return nil, err
 	}
+
+	bt.RawInfo = rt.RawInfo
+	bt.Announce = rt.Announce
+
+	bencode.DecodeBytes(bt.RawInfo, &bt.Info)
+
 	return &bt, nil
 }
 
@@ -46,16 +61,16 @@ type TorrentFile struct {
 	Files       []FileMetadata
 }
 
-func (bto BencodeTorrent) BencodeToTorrent() (*TorrentFile, error) {
-	var buff bytes.Buffer
-	err := bencode.Marshal(&buff, bto.Info)
-	if err != nil {
-		return &TorrentFile{}, err
-	}
+func (bto *BencodeTorrent) BencodeToTorrent() (*TorrentFile, error) {
+	fmt.Println("zalupa")
 
-	info := buff.Bytes()
-	fmt.Println(bto.Info.Files[0].MdSum)
-	infoHash := sha1.Sum(info)
+	buff := make([]byte, 0)
+	if bto == nil {
+		log.Fatalln("aaaaaaaaah")
+	}
+	buff = bto.RawInfo
+
+	infoHash := sha1.Sum(buff)
 	buffer := make([]byte, 100)
 	n := hex.Encode(buffer, infoHash[:])
 	fmt.Println(string(buffer[:n]))
@@ -80,8 +95,10 @@ func (bto BencodeTorrent) BencodeToTorrent() (*TorrentFile, error) {
 		PieceLength: bto.Info.PieceLength,
 		Length:      bto.Info.Length,
 		Name:        bto.Info.Name,
-		// Files:       bto.Info.Files,
+		Files:       bto.Info.Files,
 	}
+
+	fmt.Println(torrentFile.PieceLength)
 
 	return &torrentFile, nil
 }
