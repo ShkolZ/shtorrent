@@ -13,6 +13,9 @@ import (
 
 func main() {
 	cfg := &config.Config{}
+	if len(os.Args) < 2 {
+		log.Fatalln("Not enough arguments")
+	}
 	torrentPath := os.Args[1]
 	fmt.Println(torrentPath)
 	data, _ := os.ReadFile(torrentPath)
@@ -23,10 +26,10 @@ func main() {
 	}
 	cfg.Torrent, err = bencodef.BencodeToTorrent()
 
-	file, err := os.Create(cfg.Torrent.Name)
-	file.Truncate(int64(cfg.Torrent.Length))
-	cfg.File = file
-	log.Fatalln()
+	// file, err := os.Create(cfg.Torrent.Name)
+	// file.Truncate(int64(cfg.Torrent.Length))
+	// cfg.File = file
+	// log.Fatalln()
 
 	if err != nil {
 		log.Fatalln(err)

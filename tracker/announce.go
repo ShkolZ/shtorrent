@@ -30,6 +30,7 @@ func Announce(cfg *config.Config) (*TrackerResponse, error) {
 
 	queries := fmt.Sprintf("?%v&port=5656&uploaded=0&downloaded=0&left=%v&event=started&compact=1", params.Encode(), cfg.Torrent.Length)
 	url := cfg.Torrent.Announce + queries
+	fmt.Println(url)
 
 	res, err := http.Get(url)
 	if err != nil {

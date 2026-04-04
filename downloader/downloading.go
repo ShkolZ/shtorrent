@@ -5,10 +5,10 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
 	"time"
 
 	"github.com/ShkolZ/shtorrent/config"
+	"github.com/ShkolZ/shtorrent/file"
 	"github.com/ShkolZ/shtorrent/messages"
 	"github.com/ShkolZ/shtorrent/peer"
 	"github.com/ShkolZ/shtorrent/piece"
@@ -38,7 +38,7 @@ type State struct {
 	Bitfield   []byte
 }
 
-func downloadFromPeer(cfg *config.Config, peerCon *peer.PeerConn, pieceCh chan int, removeCh chan string) {
+func downloadFromPeer(cfg *config.Config, peerCon *peer.PeerConn, pieceCh chan int, removeCh chan string, pieceDataCh chan *piece.Piece) {
 	defer func() {
 		removeCh <- peerCon.Address
 	}()
@@ -102,14 +102,12 @@ func downloadFromPeer(cfg *config.Config, peerCon *peer.PeerConn, pieceCh chan i
 	}
 
 	if state.Interested && state.Unchoke {
-		pieceDataCh := make(chan *piece.Piece)
+
 		go func() {
 			for pieceIdx := range pieceCh {
 				p, err := piece.GetPiece(peerCon.Conn, pieceIdx, cfg)
 				if err != nil {
 					fmt.Println(err)
-					pieceCh <- pieceIdx
-					close(pieceDataCh)
 					return
 				}
 				if piece.CheckHash(p, cfg) {
@@ -122,32 +120,8 @@ func downloadFromPeer(cfg *config.Config, peerCon *peer.PeerConn, pieceCh chan i
 			}
 		}()
 
-		if err != nil {
-			log.Fatalln("Couldnt create file")
-		}
-		for piece := range pieceDataCh {
-			writeToFile(cfg.File, piece, cfg)
-		}
-
 	}
 	return
-
-}
-
-func writeToFile(file *os.File, p *piece.Piece, cfg *config.Config) {
-	length := cfg.Torrent.PieceLength
-	offset := int64(p.Index) * int64(length)
-	written := 0
-	for written < length {
-		n, err := file.WriteAt(p.Data[written:], offset+int64(written))
-		if err != nil && err != io.EOF {
-			fmt.Println("Some problem with writing file")
-		}
-		written += n
-
-	}
-
-	fmt.Printf("Wrote Piece %d at offset: %v with length: %v\n", p.Index, offset/1024, length/1024)
 
 }
 
@@ -157,14 +131,22 @@ func DownloadTorrent(cfg *config.Config) {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println(tr)
+
+	pieceDataCh, err := file.InitializeFiles(cfg)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	pm := peer.NewPeerManager()
+	fmt.Println(tr.ResponsePeers)
 	go pm.Run(tr.ResponsePeers)
 
 	pieceCh := piece.MakePieceQueue(cfg)
 
 	for peerCon := range pm.OuterConnCh {
-		go downloadFromPeer(cfg, peerCon, pieceCh, pm.RemoveCh)
+		fmt.Println("zalupa")
+		go downloadFromPeer(cfg, peerCon, pieceCh, pm.RemoveCh, pieceDataCh)
 	}
 
 }

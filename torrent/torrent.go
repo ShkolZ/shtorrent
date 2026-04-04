@@ -3,22 +3,24 @@ package torrent
 import (
 	"bytes"
 	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"io"
 
 	"github.com/jackpal/bencode-go"
 )
 
-type File struct {
+type FileMetadata struct {
 	Length int      `bencode:"length"`
 	Path   []string `bencode:"path"`
+	MdSum  string   `bencode:"md5sum"`
 }
 type BencodeInfo struct {
-	Name        string `bencode:"name"`
-	Files       []File `bencode:"files"`
-	Length      int    `bencode:"length"`
-	PieceLength int    `bencode:"piece length"`
-	Pieces      string `bencode:"pieces"`
+	Length      int            `bencode:"length"`
+	Name        string         `bencode:"name"`
+	PieceLength int            `bencode:"piece length"`
+	Files       []FileMetadata `bencode:"files"`
+	Pieces      string         `bencode:"pieces"`
 }
 type BencodeTorrent struct {
 	Announce string      `bencode:"announce"`
@@ -41,6 +43,7 @@ type TorrentFile struct {
 	PieceLength int
 	Length      int
 	Name        string
+	Files       []FileMetadata
 }
 
 func (bto BencodeTorrent) BencodeToTorrent() (*TorrentFile, error) {
@@ -49,12 +52,14 @@ func (bto BencodeTorrent) BencodeToTorrent() (*TorrentFile, error) {
 	if err != nil {
 		return &TorrentFile{}, err
 	}
-	fmt.Println(bto.Info.Name)
-	fmt.Println(bto.Info.Length)
-	fmt.Println(bto.Info.Files)
 
 	info := buff.Bytes()
+	fmt.Println(bto.Info.Files[0].MdSum)
 	infoHash := sha1.Sum(info)
+	buffer := make([]byte, 100)
+	n := hex.Encode(buffer, infoHash[:])
+	fmt.Println(string(buffer[:n]))
+	fmt.Println(infoHash)
 
 	pieces := []byte(bto.Info.Pieces)
 	pieceAmount := len(pieces) / 20
@@ -75,6 +80,7 @@ func (bto BencodeTorrent) BencodeToTorrent() (*TorrentFile, error) {
 		PieceLength: bto.Info.PieceLength,
 		Length:      bto.Info.Length,
 		Name:        bto.Info.Name,
+		// Files:       bto.Info.Files,
 	}
 
 	return &torrentFile, nil
