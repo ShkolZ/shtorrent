@@ -103,22 +103,20 @@ func downloadFromPeer(cfg *config.Config, peerCon *peer.PeerConn, pieceCh chan i
 
 	if state.Interested && state.Unchoke {
 
-		go func() {
-			for pieceIdx := range pieceCh {
-				p, err := piece.GetPiece(peerCon.Conn, pieceIdx, cfg)
-				if err != nil {
-					fmt.Println(err)
-					return
-				}
-				if piece.CheckHash(p, cfg) {
-					pieceDataCh <- p
-				} else {
-					fmt.Println("returning piece %v back\n", pieceIdx)
-					pieceCh <- pieceIdx
-				}
-
+		for pieceIdx := range pieceCh {
+			p, err := piece.GetPiece(peerCon.Conn, pieceIdx, cfg)
+			if err != nil {
+				fmt.Println(err)
+				return
 			}
-		}()
+			if piece.CheckHash(p, cfg) {
+				pieceDataCh <- p
+			} else {
+				fmt.Println("returning piece %v back\n", pieceIdx)
+				pieceCh <- pieceIdx
+			}
+
+		}
 
 	}
 	return

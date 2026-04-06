@@ -123,6 +123,6 @@ func writeToFile(file *os.File, p *piece.Piece, off int64) {
 
 	}
 
-	fmt.Printf("Wrote Piece %d at offset: %v with length: %v\n", p.Index, off/1024, length/1024)
+	fmt.Printf("Wrote Piece %d at offset: %v with length: %v into a %v\n", p.Index, off/1024, length/1024, file.Name())
 
 }
