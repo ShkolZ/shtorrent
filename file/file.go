@@ -23,6 +23,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync/atomic"
 
 	"github.com/ShkolZ/shtorrent/config"
 	"github.com/ShkolZ/shtorrent/piece"
@@ -57,6 +58,8 @@ func InitializeFiles(cfg *config.Config) (chan *piece.Piece, error) {
 			for piece := range pieceDataCh {
 				off := piece.Index * cfg.Torrent.PieceLength
 				writeToFile(file, piece, int64(off))
+				atomic.AddUint64(&cfg.Stats.Downloaded, uint64(cfg.Torrent.PieceLength))
+				atomic.AddUint64(&cfg.Stats.PiecesDone, 1)
 			}
 		}()
 
@@ -100,6 +103,8 @@ func InitializeFiles(cfg *config.Config) (chan *piece.Piece, error) {
 						writeToFile(file.File, piece, int64(realOff))
 					}
 				}
+				atomic.AddUint64(&cfg.Stats.Downloaded, uint64(cfg.Torrent.PieceLength))
+				atomic.AddUint64(&cfg.Stats.PiecesDone, 1)
 			}
 		}()
 		fmt.Println(fileArr)

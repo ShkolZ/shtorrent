@@ -40,6 +40,7 @@ type State struct {
 
 func downloadFromPeer(cfg *config.Config, peerCon *peer.PeerConn, pieceCh chan int, removeCh chan string, pieceDataCh chan *piece.Piece) {
 	defer func() {
+		fmt.Printf("Peer removed: %v\n", peerCon.Address)
 		removeCh <- peerCon.Address
 	}()
 	peerCon.Handshake(cfg)
@@ -57,7 +58,6 @@ func downloadFromPeer(cfg *config.Config, peerCon *peer.PeerConn, pieceCh chan i
 		peerCon.Conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		n, err := peerCon.Conn.Read(buff[read:])
 		if err != nil && err != io.EOF {
-			fmt.Println(err)
 			if ne, ok := err.(net.Error); ok {
 				if ne.Timeout() {
 					timeout++

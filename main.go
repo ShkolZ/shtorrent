@@ -8,6 +8,7 @@ import (
 
 	"github.com/ShkolZ/shtorrent/config"
 	"github.com/ShkolZ/shtorrent/downloader"
+	"github.com/ShkolZ/shtorrent/stats"
 	"github.com/ShkolZ/shtorrent/torrent"
 )
 
@@ -27,6 +28,12 @@ func main() {
 	}
 
 	cfg.Torrent, err = bencodef.BencodeToTorrent()
+	cfg.Stats = &stats.Stats{
+		Downloaded: 0,
+		Uploaded:   0,
+		PiecesDone: 0,
+	}
+	stats.StartLogging(cfg.Stats, len(cfg.Torrent.PieceHashes))
 
 	// file, err := os.Create(cfg.Torrent.Name)
 	// file.Truncate(int64(cfg.Torrent.Length))

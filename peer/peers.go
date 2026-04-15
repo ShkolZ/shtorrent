@@ -152,7 +152,7 @@ func makeConnection(peer Peer) (*PeerConn, error) {
 	conn, err := net.DialTimeout("tcp", address, 3*time.Second)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Peer Dolbaeb karoch: %v", err)
 	}
 	return &PeerConn{
 		Address: address,
