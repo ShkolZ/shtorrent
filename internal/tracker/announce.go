@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/ShkolZ/shtorrent/config"
+	"github.com/ShkolZ/shtorrent/internal/config"
 	"github.com/jackpal/bencode-go"
 )
 

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ShkolZ/shtorrent/config"
+	"github.com/ShkolZ/shtorrent/internal/config"
 )
 
 const target int = 25

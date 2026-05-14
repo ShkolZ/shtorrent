@@ -7,30 +7,18 @@ import (
 	"net"
 	"time"
 
-	"github.com/ShkolZ/shtorrent/config"
-	"github.com/ShkolZ/shtorrent/file"
-	"github.com/ShkolZ/shtorrent/messages"
-	"github.com/ShkolZ/shtorrent/peer"
-	"github.com/ShkolZ/shtorrent/piece"
-	"github.com/ShkolZ/shtorrent/tracker"
+	"github.com/ShkolZ/shtorrent/internal/config"
+	"github.com/ShkolZ/shtorrent/internal/messages"
+	"github.com/ShkolZ/shtorrent/internal/peer"
+	"github.com/ShkolZ/shtorrent/internal/piece"
+	"github.com/ShkolZ/shtorrent/internal/storage"
+	"github.com/ShkolZ/shtorrent/internal/tracker"
 )
 
 // type Handshake struct {
 // 	info_hash []byte
 // 	peer_id   []byte
 // }
-
-const (
-	Choke         = 0
-	Unchoke       = 1
-	Interested    = 2
-	NotInterested = 3
-	Have          = 4
-	Bitfield      = 5
-	Request       = 6
-	Piece         = 7
-	Cancel        = 8
-)
 
 type State struct {
 	Unchoke    bool
@@ -73,11 +61,11 @@ func downloadFromPeer(cfg *config.Config, peerCon *peer.PeerConn, pieceCh chan i
 		used += used
 		if msg != nil {
 			switch msg.Id {
-			case Unchoke:
+			case messages.MsgUnchoke:
 				state.Unchoke = true
-			case Bitfield:
+			case messages.MsgBitfield:
 				state.Bitfield = *msg.Payload
-			case Have:
+			case messages.MsgHave:
 				fmt.Println("Not implemented")
 				return
 			}
@@ -112,7 +100,7 @@ func downloadFromPeer(cfg *config.Config, peerCon *peer.PeerConn, pieceCh chan i
 			if piece.CheckHash(p, cfg) {
 				pieceDataCh <- p
 			} else {
-				fmt.Println("returning piece %v back\n", pieceIdx)
+				fmt.Printf("returning piece %v back\n", pieceIdx)
 				pieceCh <- pieceIdx
 			}
 
@@ -131,7 +119,7 @@ func DownloadTorrent(cfg *config.Config) {
 	}
 	fmt.Println(tr)
 
-	pieceDataCh, err := file.InitializeFiles(cfg)
+	pieceDataCh, err := storage.InitializeFiles(cfg)
 	if err != nil {
 		log.Fatalln(err)
 	}

@@ -6,9 +6,23 @@ import (
 	"net"
 )
 
+type MessageID byte
+
+const (
+	MsgChoke         MessageID = 0
+	MsgUnchoke       MessageID = 1
+	MsgInterested    MessageID = 2
+	MsgNotInterested MessageID = 3
+	MsgHave          MessageID = 4
+	MsgBitfield      MessageID = 5
+	MsgRequest       MessageID = 6
+	MsgPiece         MessageID = 7
+	MsgCancel        MessageID = 8
+)
+
 type Message struct {
 	Length  []byte
-	Id      byte
+	Id      MessageID
 	Index   *[]byte
 	Offset  *[]byte
 	Payload *[]byte
@@ -43,7 +57,7 @@ func MakeMessage(data []byte) (int, *Message, error) {
 		payload := other[9:]
 		return int(4 + binary.BigEndian.Uint32(length)), &Message{
 			Length:  length,
-			Id:      id,
+			Id:      MsgPiece,
 			Index:   &index,
 			Offset:  &offset,
 			Payload: &payload,
@@ -53,14 +67,14 @@ func MakeMessage(data []byte) (int, *Message, error) {
 	if len(other) <= 1 {
 		return 5, &Message{
 			Length: length,
-			Id:     id,
+			Id:     MsgUnchoke,
 		}, nil
 	}
 
 	payload := other[1:binary.BigEndian.Uint32(length)]
 	return int(4 + binary.BigEndian.Uint32(length)), &Message{
 		Length:  length,
-		Id:      id,
+		Id:      MessageID(id),
 		Payload: &payload,
 	}, nil
 }

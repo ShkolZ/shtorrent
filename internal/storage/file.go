@@ -15,7 +15,7 @@
 // }
 
 // func WriteToFile
-package file
+package storage
 
 import (
 	"fmt"
@@ -25,8 +25,8 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/ShkolZ/shtorrent/config"
-	"github.com/ShkolZ/shtorrent/piece"
+	"github.com/ShkolZ/shtorrent/internal/config"
+	"github.com/ShkolZ/shtorrent/internal/piece"
 )
 
 type FileEntry struct {

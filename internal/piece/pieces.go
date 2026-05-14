@@ -8,7 +8,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/ShkolZ/shtorrent/config"
+	"github.com/ShkolZ/shtorrent/internal/config"
 )
 
 const (
